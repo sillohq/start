@@ -1,0 +1,30 @@
+"""{{ pascal }}.
+
+Middleware wraps every request. Call `call_next()` to continue down the chain
+and return its response, or return early to short-circuit.
+
+Register it in `app/bootstrap.py`. Note that `application.use()` builds the
+chain inside-out: whatever is registered last runs first.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+
+from sillo.core.http import Request, Response
+
+
+class {{ pascal }}:
+    """{{ human }}."""
+
+    async def __call__(
+        self,
+        request: Request,
+        response: Response,
+        call_next: Callable[[], Awaitable[Response]],
+    ) -> Response:
+        """Handle one request."""
+        # Anything before the call happens on the way in.
+        result = await call_next()
+        # Anything after happens on the way out.
+        return result

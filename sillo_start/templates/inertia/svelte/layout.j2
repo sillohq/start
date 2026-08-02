@@ -1,0 +1,18 @@
+<script lang="ts">
+  import { inertia } from "@inertiajs/svelte";
+
+  let { children } = $props();
+</script>
+
+<div class="app">
+  <header>
+    <nav>
+      <!-- use:inertia keeps navigation client-side; without it the browser
+           does a full page load and discards the app state. -->
+      <a href="/" use:inertia>Home</a>
+    </nav>
+  </header>
+  <main>
+    {% raw %}{@render children()}{% endraw %}
+  </main>
+</div>

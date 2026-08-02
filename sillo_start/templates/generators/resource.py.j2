@@ -1,0 +1,26 @@
+"""Response shaping for {{ pascal }}.
+
+A resource decides what a model looks like over the wire — which is rarely
+every column. Keeping that here stops internal fields leaking into responses
+by accident when a model gains a column.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class {{ pascal }}:
+    """Turns a {{ human | lower }} into a response body."""
+
+    @staticmethod
+    def one(record: Any) -> dict:
+        """Shape a single record."""
+        return {
+            "id": record.id,
+        }
+
+    @classmethod
+    def many(cls, records: list[Any]) -> list[dict]:
+        """Shape a list of records."""
+        return [cls.one(record) for record in records]

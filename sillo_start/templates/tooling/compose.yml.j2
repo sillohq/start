@@ -1,0 +1,76 @@
+# Local development services.
+#
+#   docker compose up -d
+#
+# The application itself is run by `sillo-start dev` so you keep reload and
+# direct log output; this file provides the things around it.
+
+services:
+{% if database.driver == "postgres" %}
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: {{ package }}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Depending services wait for this, so they do not start against a
+      # database that is still initialising.
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+{% elif database.driver == "mysql" %}
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: {{ package }}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+{% endif %}
+{% if needs_redis %}
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+{% endif %}
+{% if mail.driver == "mailpit" %}
+  mail:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # web UI
+{% endif %}
+
+volumes:
+{% if database.driver == "postgres" %}
+  postgres_data:
+{% elif database.driver == "mysql" %}
+  mysql_data:
+{% endif %}
+{% if needs_redis %}
+  redis_data:
+{% endif %}

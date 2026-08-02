@@ -1,0 +1,258 @@
+"""Application assembly.
+
+``create_app`` is the single place where the application is put together:
+middleware, then infrastructure, then routes. Keeping it a function rather than
+module-level code means tests can build an isolated instance, and the import in
+``app/main.py`` stays trivial.
+"""
+
+from __future__ import annotations
+
+from sillo import silloApp
+{% if api.cors or api.csrf or api.rate_limiting %}
+from sillo.security import (
+{% if api.cors %}
+    CORSMiddleware,
+    CorsConfig,
+{% endif %}
+{% if api.csrf %}
+    CSRFConfig,
+    CSRFMiddleware,
+{% endif %}
+{% if api.rate_limiting %}
+    RateLimitConfig,
+    RateLimitMiddleware,
+{% endif %}
+)
+{% endif %}
+{% if uses_sessions %}
+from sillo.session import SessionConfig, SessionMiddleware
+{% endif %}
+{% if uses_record %}
+from sillo.record import DatabaseConfig, setup_record
+{% endif %}
+{% if auth.enabled %}
+from sillo.auth import AuthenticationMiddleware
+{% if auth.strategy == "session" %}
+from sillo.auth.session_auth import SessionAuthBackend
+{% elif auth.strategy in ("jwt", "token") %}
+from sillo.auth.jwt_auth import JWTAuthBackend
+{% elif auth.strategy == "apikey" %}
+from sillo.auth.apikey import APIKeyAuthBackend
+{% endif %}
+{% endif %}
+{% if queue.enabled or scheduler.enabled %}
+from sillo.work import setup_work
+{% endif %}
+{% if admin.enabled %}
+from sillo.admin import setup_admin
+{% endif %}
+
+from app.config import config
+{% if api.cors %}
+from app.config import cors_origins
+{% endif %}
+{% if auth.enabled %}
+from database.models.user import User
+{% endif %}
+
+
+def create_app() -> silloApp:
+    """Build and return the configured application."""
+    application = silloApp(
+        debug=config.debug,
+        title=config.app_name,
+        version="{{ project.version }}",
+{% if project.description %}
+        description="{{ project.description }}",
+{% endif %}
+{% if not api.openapi %}
+        swagger_docs="",
+        redoc_docs="",
+{% endif %}
+    )
+
+    # Order matters, and not in the obvious direction. ``application.use()``
+    # puts the newest registration *outermost*, so whatever registers last runs
+    # first at request time.
+{% if admin.enabled %}
+    #
+    # ``AdminSite.mount()`` attaches its own auth middleware through
+    # ``app.use()``, and that middleware reads ``request.session``. So the admin
+    # has to be registered *before* the middleware block, which is what leaves
+    # the session middleware outside — and therefore ahead — of it. Register it
+    # after, and every admin page 500s with "No Session Middleware Installed"
+    # while the session middleware is demonstrably installed.
+    _register_admin(application)
+{% endif %}
+{% if inertia.enabled %}
+    _register_inertia(application)
+{% endif %}
+    _register_middleware(application)
+{% if uses_record %}
+    _register_database(application)
+{% endif %}
+{% if queue.enabled or scheduler.enabled %}
+    _register_work(application)
+{% endif %}
+    _register_routes(application)
+
+    return application
+
+
+def _register_middleware(application: silloApp) -> None:
+    """Attach middleware.
+
+    ``application.use()`` builds the chain inside-out: the middleware
+    registered *last* is the outermost, and therefore runs *first* on the way
+    in. The registrations below are ordered accordingly — innermost concern
+    first, outermost last — so at request time the chain runs
+
+        CORS → sessions → CSRF → rate limit → authentication → handler.
+
+    Authentication reads the session, so the session middleware has to be
+    registered after it, not before.
+    """
+{% if auth.enabled %}
+    application.use(
+        AuthenticationMiddleware(
+            user_model=User,
+{% if auth.strategy == "session" %}
+            backend=SessionAuthBackend(),
+{% elif auth.strategy in ("jwt", "token") %}
+            # identifier="sub" is required, not cosmetic: the backend reads
+            # payload.get(identifier) and defaults to "id", but sillo writes the
+            # user id into the "sub" claim. With the default, identity is always
+            # "" and every authenticated request silently fails to load a user.
+            backend=JWTAuthBackend(secret_key=config.jwt_secret, identifier="sub"),
+{% elif auth.strategy == "apikey" %}
+            backend=APIKeyAuthBackend(),
+{% endif %}
+        )
+    )
+{% endif %}
+{% if api.rate_limiting %}
+    application.use(RateLimitMiddleware(config=RateLimitConfig()))
+{% endif %}
+{% if api.csrf %}
+    application.use(CSRFMiddleware(config=CSRFConfig(secret=config.secret_key)))
+{% endif %}
+{% if uses_sessions %}
+    # Registered after authentication so it ends up *outside* it and therefore
+    # runs first: SessionAuthBackend reads request.session, and the admin
+    # panel's SessionAuth backend does too. The admin needs this even when the
+    # app authenticates with JWT, which is why the guard is uses_sessions
+    # rather than session.enabled.
+    application.use(
+        SessionMiddleware(
+            config=SessionConfig(
+                session_cookie_name=config.session_cookie_name,
+                session_expiration_time=config.session_lifetime,
+                # Secure cookies require HTTPS, which local development is not.
+                session_cookie_secure=config.app_env != "local",
+            ),
+            secret_key=config.secret_key,
+        )
+    )
+{% endif %}
+{% if api.cors %}
+    application.use(
+        CORSMiddleware(
+            config=CorsConfig(
+                allow_origins=cors_origins(),
+                allow_credentials=True,
+            )
+        )
+    )
+{% endif %}
+{% if not (api.cors or uses_sessions or api.csrf or api.rate_limiting or auth.enabled) %}
+    # No middleware is configured yet. Add yours here, for example:
+    #   application.use(CORSMiddleware(config=CorsConfig(allow_origins=["*"])))
+    return None
+{% endif %}
+{% if uses_record %}
+
+
+def _register_database(application: silloApp) -> None:
+    """Wire the Record ORM into the application lifecycle.
+
+    ``setup_record`` registers the startup and shutdown hooks and the
+    per-request context middleware, and stores the manager on
+    ``application.state["record"]`` for health checks.
+    """
+    setup_record(
+        application,
+        # Off by default — see config.db_generate_schemas for why.
+        DatabaseConfig(
+            url=config.database_url,
+            pool_size=config.db_pool_size,
+            echo=config.db_echo,
+            generate_schemas=config.db_generate_schemas,
+        ),
+        # Only these modules are scanned for models, and models are keyed by
+        # class name — so do not add "sillo.users" here. Its built-in `User`
+        # would displace the project's own and stop its columns being created.
+        model_modules=[
+            "{{ database.models_module }}",
+{% if admin.enabled %}
+            # The admin panel stores its activity log and roles in these models.
+            "sillo.admin.models",
+{% endif %}
+        ],
+    )
+{% endif %}
+{% if queue.enabled or scheduler.enabled %}
+
+
+def _register_work(application: silloApp) -> None:
+    """Start the queue connection and scheduler alongside the application."""
+    setup_work(application, queue_name="{{ queue.name }}")
+{% if scheduler.enabled %}
+
+    # Importing the module registers its scheduled tasks against the manager.
+    from app.tasks import register_tasks
+
+    register_tasks(application)
+{% endif %}
+{% endif %}
+
+
+def _register_routes(application: silloApp) -> None:
+    """Attach the application's routes.
+
+    Order is significant. A router claims its whole prefix subtree, so the most
+    specific prefix has to be mounted first — mounting "{{ api.prefix }}" before
+    "{{ api.prefix }}/auth" would leave every auth route unreachable.
+
+    Web pages are registered individually rather than mounted, because a
+    prefix-less router would claim "/" and everything beneath it.
+    """
+{% for module, router, prefix in routers %}
+    from routes.{{ module }} import router as {{ router }}  # {{ prefix }}
+
+    application.mount_router({{ router }})
+{% endfor %}
+{% if needs_web_routes %}
+
+    from routes.web import register as register_web_routes
+
+    register_web_routes(application)
+{% endif %}
+{% if admin.enabled %}
+
+
+def _register_admin(application: silloApp) -> None:
+    """Mount the admin panel and register its models."""
+    from app.admin import register_admin
+
+    register_admin(application)
+{% endif %}
+{% if inertia.enabled %}
+
+
+def _register_inertia(application: silloApp) -> None:
+    """Attach the Inertia adapter so handlers can render pages."""
+    from app.inertia import inertia
+
+    inertia.middleware(application)
+{% endif %}

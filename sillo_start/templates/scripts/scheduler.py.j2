@@ -1,0 +1,69 @@
+"""Scheduled task runner.
+
+Run with `python scripts/scheduler.py`, or let `sillo-start dev` start it
+alongside the application.
+
+Tasks are registered in `app/tasks/__init__.py`; this process owns the clock
+and runs them when they are due.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import signal
+import sys
+from pathlib import Path
+
+{% if uses_record %}
+from sillo import silloApp
+from sillo.record import DatabaseConfig, setup_record
+{% endif %}
+from sillo.work.scheduler import SchedulerManager
+
+# Running this file directly puts scripts/ on sys.path rather than the project
+# root, so the `app` package below is not importable without this. Must stay
+# above the app imports.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.config import config  # noqa: E402
+from app.tasks import register_tasks  # noqa: E402
+
+
+async def main() -> None:
+    """Run the scheduler until stopped."""
+{% if uses_record %}
+    application = silloApp(debug=config.debug, title="scheduler", version="0")
+    database = setup_record(
+        application,
+        # Off by default — see config.db_generate_schemas for why.
+        DatabaseConfig(url=config.database_url, generate_schemas=config.db_generate_schemas),
+        model_modules=["{{ database.models_module }}"],
+    )
+    await database.init()
+{% endif %}
+
+    scheduler = SchedulerManager()
+    register_tasks(scheduler)
+    await scheduler.start()
+
+    stopping = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stopping.set)
+
+    print(f"Scheduler started with {len(scheduler.list())} task(s). Ctrl+C to stop.", flush=True)
+    try:
+        await stopping.wait()
+    finally:
+        await scheduler.stop()
+{% if uses_record %}
+        await database.shutdown()
+{% endif %}
+        print("Scheduler stopped.", flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

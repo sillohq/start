@@ -1,0 +1,202 @@
+"""Authentication routes.
+
+Credential checking goes through ``User.verify_credentials``, which looks the
+user up by email or username, rejects inactive accounts, verifies the hash and
+stamps ``last_login`` — so these handlers stay about HTTP and never touch a
+password hash directly.
+"""
+
+from __future__ import annotations
+
+{% if auth.strategy in ("jwt", "token") %}
+from datetime import timedelta
+
+{% endif %}
+from pydantic import BaseModel, EmailStr, Field
+from sillo import Router
+from sillo.core.http import Request, Response
+{% if auth.strategy in ("jwt", "token") %}
+from sillo.auth.jwt_auth import TokenForUser, decode_jwt
+from sillo.users import UserBaseModel
+{% elif auth.strategy == "session" %}
+from sillo.auth.session_auth import login as start_session
+from sillo.auth.session_auth import logout as end_session
+{% endif %}
+
+from app.config import config
+from database.models.user import User
+
+router = Router(prefix="{{ api.prefix }}/auth", tags=["auth"])
+
+
+{% if auth.registration %}
+class RegisterRequest(BaseModel):
+    """Payload for creating an account."""
+
+    email: EmailStr
+    username: str = Field(min_length=3, max_length=150)
+    password: str = Field(min_length=8, max_length=128)
+
+
+{% endif %}
+class LoginRequest(BaseModel):
+    """Payload for signing in. The identifier may be an email or a username."""
+
+    identifier: str
+    password: str
+{% if auth.strategy in ("jwt", "token") %}
+
+
+class RefreshRequest(BaseModel):
+    """Payload for trading a refresh token for a new pair."""
+
+    refresh_token: str
+{% endif %}
+
+
+def _serialize(user: User) -> dict:
+    """Shape a user for a response body, without the password hash."""
+    return {
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "is_active": user.is_active,
+    }
+{% if auth.strategy in ("jwt", "token") %}
+
+
+def _tokens_for(user: UserBaseModel) -> TokenForUser:
+    """Bind the signing configuration to a user.
+
+    ``TokenForUser`` writes the user id into the ``sub`` claim, which is why
+    the backend in ``app.bootstrap`` is configured with ``identifier="sub"``.
+    """
+    return TokenForUser(user, secret=config.jwt_secret, algorithm=config.jwt_algorithm)
+{% endif %}
+{% if auth.registration %}
+
+
+@router.post("/register", request_model=RegisterRequest, summary="Create an account")
+async def register(request: Request, response: Response, payload) -> Response:
+    """Register a new user.
+
+    The uniqueness check is deliberately explicit: letting the database
+    constraint raise would surface as a 500 rather than a 409.
+    """
+    if await User.objects.get_by_email(payload.email) is not None:
+        return response.json({"detail": "That email is already registered."}, status_code=409)
+    if await User.objects.get_by_username(payload.username) is not None:
+        return response.json({"detail": "That username is taken."}, status_code=409)
+
+    user = await User.objects.create_user(
+        email=payload.email,
+        username=payload.username,
+        password=payload.password,
+    )
+    return response.json(_serialize(user), status_code=201)
+{% endif %}
+
+
+@router.post("/login", request_model=LoginRequest, summary="Sign in")
+async def login(request: Request, response: Response, payload) -> Response:
+    """Exchange credentials for {{ 'a token' if auth.strategy in ('jwt', 'token') else 'a session' }}."""
+    user = await User.verify_credentials(payload.identifier, payload.password)
+    if user is None:
+        # One message for every failure mode, so the response cannot be used
+        # to discover which accounts exist.
+        return response.json({"detail": "Invalid credentials."}, status_code=401)
+
+{% if auth.strategy in ("jwt", "token") %}
+    pair = _tokens_for(user).token_pair(
+        access_expires=timedelta(minutes=config.jwt_expires_minutes),
+        refresh_expires=timedelta(days=config.jwt_refresh_expires_days),
+    )
+    return response.json(
+        {
+            **pair,
+            "expires_in": config.jwt_expires_minutes * 60,
+            "user": _serialize(user),
+        }
+    )
+{% elif auth.strategy == "session" %}
+    start_session(request, user)
+    return response.json({"user": _serialize(user)})
+{% else %}
+    return response.json({"user": _serialize(user)})
+{% endif %}
+{% if auth.strategy in ("jwt", "token") %}
+
+
+@router.post("/refresh", request_model=RefreshRequest, summary="Refresh the token pair")
+async def refresh(request: Request, response: Response, payload) -> Response:
+    """Trade a valid refresh token for a fresh pair.
+
+    Verification is stateless: signature, expiry and token type only. sillo's
+    DB-backed rotation (``JWTUserMixin.refresh_token_pair``) is deliberately
+    not used — it looks the token up by a ``jti`` claim that ``token_pair()``
+    does not emit, so it raises "Unknown refresh token" on the happy path. Add
+    a token blacklist here if you need server-side revocation.
+    """
+    try:
+        claims = decode_jwt(
+            payload.refresh_token,
+            config.jwt_secret,
+            algorithms=[config.jwt_algorithm],
+        )
+    except ValueError:
+        # Covers a bad signature and an expired token alike; the client's
+        # remedy is the same either way.
+        return response.json({"detail": "Invalid or expired refresh token."}, status_code=401)
+
+    # Without this an access token would be accepted as a refresh token, which
+    # would quietly defeat the short access lifetime.
+    if claims.get("typ") != "refresh":
+        return response.json({"detail": "Not a refresh token."}, status_code=401)
+
+    # "sub" is str(user.identity), so it needs converting back; a token with a
+    # non-numeric sub is malformed rather than merely unknown.
+    try:
+        user_id = int(claims.get("sub", ""))
+    except (TypeError, ValueError):
+        return response.json({"detail": "Invalid or expired refresh token."}, status_code=401)
+
+    # get_by_id already filters on is_active, so a deactivated account cannot
+    # refresh its way back in.
+    user = await User.objects.get_by_id(user_id)
+    if user is None:
+        return response.json({"detail": "Invalid or expired refresh token."}, status_code=401)
+
+    pair = _tokens_for(user).token_pair(
+        access_expires=timedelta(minutes=config.jwt_expires_minutes),
+        refresh_expires=timedelta(days=config.jwt_refresh_expires_days),
+    )
+    return response.json({**pair, "expires_in": config.jwt_expires_minutes * 60})
+{% endif %}
+{% if auth.logout %}
+
+
+@router.post("/logout", summary="Sign out")
+async def logout(request: Request, response: Response) -> Response:
+    """End the current {{ 'session' if auth.strategy == 'session' else 'client session' }}."""
+{% if auth.strategy == "session" %}
+    end_session(request)
+    return response.json({"detail": "Signed out."})
+{% else %}
+    # Tokens are stateless: the client discards it. Add sillo's token
+    # blacklist here if you need server-side revocation.
+    return response.json({"detail": "Discard your token to sign out."})
+{% endif %}
+{% endif %}
+
+
+@router.get("/me", summary="The signed-in user")
+async def me(request: Request, response: Response) -> Response:
+    """Return the authenticated user, or 401 when there is none.
+
+    ``request.user`` is populated by the authentication middleware registered
+    in ``app.bootstrap``.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return response.json({"detail": "Not authenticated."}, status_code=401)
+    return response.json(_serialize(user))

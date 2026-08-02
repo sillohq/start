@@ -1,0 +1,25 @@
+import { createInertiaApp } from "@inertiajs/vue3";
+import { createApp, h } from "vue";
+
+// Pages are resolved eagerly so a page component is never a network round trip
+// away. Swap to a lazy `import.meta.glob` once the page count makes splitting
+// the initial bundle worthwhile.
+const pages = import.meta.glob("./pages/**/*.vue", { eager: true });
+
+createInertiaApp({
+  resolve: (name) => {
+    const page = pages[`./pages/${name}.vue`];
+    if (!page) {
+      throw new Error(
+        `Inertia page "${name}" was not found. Expected src/pages/${name}.vue.`,
+      );
+    }
+    return page;
+  },
+  setup({ el, App, props, plugin }) {
+    createApp({ render: () => h(App, props) })
+      .use(plugin)
+      .mount(el);
+  },
+  progress: { color: "#29d" },
+});

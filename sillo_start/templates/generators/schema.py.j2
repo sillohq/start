@@ -1,0 +1,56 @@
+"""Request and response schemas for {{ pascal }}.
+
+These are Pydantic models. Pass the create/update schema to a route's
+``request_model=`` and the framework validates the body before the handler
+runs, returning 422 with the offending field when it does not match.
+"""
+
+from __future__ import annotations
+
+{% if needs_decimal %}
+from decimal import Decimal
+{% endif %}
+{% if needs_date %}
+from datetime import date, datetime, time
+{% endif %}
+{% if needs_uuid %}
+from uuid import UUID
+{% endif %}
+
+from pydantic import BaseModel, ConfigDict
+
+
+class {{ pascal }}Create(BaseModel):
+    """Payload for creating a {{ human | lower }}."""
+
+{% for field in fields %}
+    {{ field.name }}: {{ field.python_type }}{% if field.nullable %} = None{% endif %}
+
+{% endfor %}
+{% if not fields %}
+    # Add the fields clients may send when creating a {{ human | lower }}.
+    pass
+{% endif %}
+
+
+class {{ pascal }}Update(BaseModel):
+    """Payload for updating a {{ human | lower }}. Every field is optional."""
+
+{% for field in fields %}
+    {{ field.name }}: {{ field.python_type.replace(' | None', '') }} | None = None
+{% endfor %}
+{% if not fields %}
+    pass
+{% endif %}
+
+
+class {{ pascal }}Out(BaseModel):
+    """A {{ human | lower }} as returned by the API."""
+
+    # from_attributes lets this be built straight from a model instance.
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+{% for field in fields %}
+    {{ field.name }}: {{ field.python_type }}
+{% endfor %}

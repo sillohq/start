@@ -1,0 +1,25 @@
+"""A factory producing {{ pascal }} instances for tests.
+
+Factories let a test say what matters to it and leave the rest to defaults,
+so adding a required column later does not break every test that happens to
+create one of these.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class {{ pascal }}:
+    """Builds {{ human | lower }} records."""
+
+    @staticmethod
+    def attributes(**overrides: Any) -> dict:
+        """Return default attributes, with *overrides* applied."""
+        defaults: dict[str, Any] = {}
+        return {**defaults, **overrides}
+
+    @classmethod
+    async def create(cls, **overrides: Any):
+        """Create and persist one record."""
+        raise NotImplementedError("Point {{ pascal }}.create at your model")

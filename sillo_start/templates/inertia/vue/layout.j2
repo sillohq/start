@@ -1,0 +1,18 @@
+<script setup lang="ts">
+import { Link } from "@inertiajs/vue3";
+</script>
+
+<template>
+  <div class="app">
+    <header>
+      <nav>
+        <!-- Link keeps navigation inside Inertia; a plain <a> would trigger a
+             full page load and discard the client-side state. -->
+        <Link href="/">Home</Link>
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+  </div>
+</template>

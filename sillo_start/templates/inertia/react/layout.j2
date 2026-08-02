@@ -1,0 +1,21 @@
+import { Link } from "@inertiajs/react";
+import type { ReactNode } from "react";
+
+interface AppLayoutProps {
+  children: ReactNode;
+}
+
+export default function AppLayout({ children }: AppLayoutProps) {
+  return (
+    <div className="app">
+      <header>
+        <nav>
+          {/* Link keeps navigation inside Inertia — a plain <a> would trigger
+              a full page load and discard the client-side state. */}
+          <Link href="/">Home</Link>
+        </nav>
+      </header>
+      <main>{children}</main>
+    </div>
+  );
+}

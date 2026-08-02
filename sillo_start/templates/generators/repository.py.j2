@@ -1,0 +1,51 @@
+"""Data access for {{ pascal }}.
+
+A repository keeps queries in one place, so a change to how something is
+fetched happens once rather than in every handler that needed it.
+"""
+
+from __future__ import annotations
+
+from sillo.record import Collection
+
+from database.models.{{ snake }} import {{ pascal }}
+
+
+class {{ pascal }}Repository:
+    """Queries for {{ plural }}."""
+
+    model = {{ pascal }}
+
+    async def all(self) -> list[{{ pascal }}]:
+        """Return every {{ human | lower }}."""
+        return await self.model.all()
+
+    async def find(self, item_id: int) -> {{ pascal }} | None:
+        """Return one {{ human | lower }}, or None when it does not exist."""
+        return await self.model.get_or_none(id=item_id)
+
+    async def create(self, **attributes) -> {{ pascal }}:
+        """Create and persist a {{ human | lower }}."""
+        return await self.model.create(**attributes)
+
+    async def update(self, item_id: int, **attributes) -> {{ pascal }} | None:
+        """Update a {{ human | lower }} in place, returning it."""
+        instance = await self.find(item_id)
+        if instance is None:
+            return None
+        for key, value in attributes.items():
+            setattr(instance, key, value)
+        await instance.save()
+        return instance
+
+    async def delete(self, item_id: int) -> bool:
+        """Delete a {{ human | lower }}.
+
+        Returns:
+            True when a row was deleted.
+        """
+        instance = await self.find(item_id)
+        if instance is None:
+            return False
+        await instance.delete()
+        return True

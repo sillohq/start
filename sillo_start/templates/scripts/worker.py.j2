@@ -1,0 +1,99 @@
+"""Queue worker entrypoint.
+
+Run with `python scripts/worker.py`, or let `sillo-start dev` start it
+alongside the application.
+
+The framework ships no worker CLI, so this script is the entrypoint: it builds
+the queue connection, opens the database, and runs the worker pool until
+interrupted.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import signal
+import sys
+from pathlib import Path
+
+from sillo.record import DatabaseConfig, setup_record
+from sillo import silloApp
+from sillo.work.queue import (
+    ConnectionManager,
+    MemoryFailedRepository,
+    PayloadSerializer,
+    QueueWorker,
+    WorkerOptions,
+{% if queue.driver == "redis" %}
+    RedisConnection,
+{% else %}
+    SyncConnection,
+{% endif %}
+)
+
+# Running this file directly puts scripts/ on sys.path rather than the project
+# root, so the `app` package below is not importable without this. Must stay
+# above the app imports.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.config import config  # noqa: E402
+
+# Importing the jobs package registers the job classes so the worker can
+# resolve a payload back to the class that handles it.
+import app.jobs  # noqa: E402,F401
+
+
+async def main() -> None:
+    """Run the worker until stopped."""
+{% if uses_record %}
+    # Jobs almost always touch the database, so the connection is opened here
+    # rather than left to whichever job happens to need it first.
+    application = silloApp(debug=config.debug, title="worker", version="0")
+    database = setup_record(
+        application,
+        # Off by default — see config.db_generate_schemas for why.
+        DatabaseConfig(url=config.database_url, generate_schemas=config.db_generate_schemas),
+        model_modules=["{{ database.models_module }}"],
+    )
+    await database.init()
+{% endif %}
+
+    manager = ConnectionManager()
+{% if queue.driver == "redis" %}
+    manager.add("default", RedisConnection(url=config.redis_url))
+{% else %}
+    manager.add("default", SyncConnection())
+{% endif %}
+
+    worker = QueueWorker(
+        manager,
+        PayloadSerializer(),
+        MemoryFailedRepository(),
+        options=WorkerOptions(concurrency={{ queue.concurrency }}),
+    )
+
+    stopping = asyncio.Event()
+
+    def request_stop() -> None:
+        """Ask the worker to finish the job in flight, then exit."""
+        stopping.set()
+        worker.stop()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, request_stop)
+
+    print("Worker started. Press Ctrl+C to stop.", flush=True)
+    try:
+        await worker.run()
+    finally:
+{% if uses_record %}
+        await database.shutdown()
+{% endif %}
+        print("Worker stopped.", flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

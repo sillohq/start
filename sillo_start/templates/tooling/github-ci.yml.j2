@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+{% if needs_database_server or needs_redis %}
+
+    services:
+{% if database.driver == "postgres" %}
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: {{ package }}_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 3s --health-retries 10
+{% elif database.driver == "mysql" %}
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: {{ package }}_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+{% endif %}
+{% if needs_redis %}
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+{% endif %}
+{% endif %}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Lint
+        run: uv run ruff check .
+{% if tooling.mypy %}
+
+      - name: Type check
+        run: uv run mypy .
+{% endif %}
+
+      - name: Test
+        env:
+          # Tests get their own database so a failure cannot corrupt anything
+          # a developer cares about.
+          DATABASE_URL: {% if database.driver == "postgres" %}postgres://postgres:postgres@localhost:5432/{{ package }}_test{% elif database.driver == "mysql" %}mysql://root:root@localhost:3306/{{ package }}_test{% else %}sqlite://:memory:{% endif %}
+
+          SECRET_KEY: test-secret-key-for-ci-only-not-a-real-secret
+        run: uv run pytest
+{% if inertia.enabled %}
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: {{ inertia.package_manager }}
+          cache-dependency-path: {{ inertia.frontend_path }}/package-lock.json
+
+      - run: {{ inertia.package_manager }} install
+        working-directory: {{ inertia.frontend_path }}
+
+      - run: {{ inertia.package_manager }} run build
+        working-directory: {{ inertia.frontend_path }}
+{% endif %}

@@ -1,0 +1,34 @@
+"""Tortoise configuration for migrations.
+
+Migrations run outside the application, so they cannot ask the running app for
+its database settings. ``TORTOISE_ORM`` is read from here instead, and the URL
+comes from the environment, so the application and the migration tooling cannot
+drift apart.
+
+Sillo uses Tortoise's own migration engine (``tortoise.migrations``), which
+tracks applied migrations in the ``tortoise_migrations`` table. There is no
+aerich involved and no ``aerich.models`` entry to add.
+"""
+
+from __future__ import annotations
+
+import os
+
+#: Model modules Tortoise scans when detecting schema changes.
+MODEL_MODULES = ["{{ database.models_module }}"]
+
+TORTOISE_ORM = {
+    "connections": {
+        "default": os.getenv("DATABASE_URL", "{{ database_url }}"),
+    },
+    "apps": {
+        "models": {
+            "models": MODEL_MODULES,
+            "default_connection": "default",
+            # Required. Without it Tortoise treats this app as unmigrated and
+            # every migration command reports "no migrations" while silently
+            # doing nothing.
+            "migrations": "{{ database.migrations_module }}",
+        },
+    },
+}

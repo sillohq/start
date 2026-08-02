@@ -1,0 +1,21 @@
+"""ASGI entrypoint.
+
+This module exposes ``app`` for the server to import — the target named by
+``{{ app.entrypoint }}`` in ``sillo.toml``:
+
+    uvicorn {{ app.entrypoint }} --reload
+
+Assembly lives in ``app.bootstrap`` so that importing this module has no side
+effects beyond building the application.
+"""
+
+from __future__ import annotations
+
+from app.bootstrap import create_app
+from app.config import config
+
+app = create_app()
+
+
+if __name__ == "__main__":
+    app.run(host=config.host, port=config.port, reload=config.debug)

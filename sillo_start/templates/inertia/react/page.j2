@@ -1,0 +1,16 @@
+import { Head } from "@inertiajs/react";
+import AppLayout from "@/layouts/AppLayout";
+
+interface HomeProps {
+  message: string;
+}
+
+export default function Home({ message }: HomeProps) {
+  return (
+    <AppLayout>
+      <Head title="Home" />
+      <h1>{{ title }}</h1>
+      <p>{message}</p>
+    </AppLayout>
+  );
+}

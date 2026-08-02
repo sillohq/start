@@ -1,0 +1,42 @@
+"""Smoke tests for the generated application.
+
+These exist so a freshly created project has a green test suite to build on,
+and so a broken bootstrap is caught immediately rather than at the first
+request.
+"""
+
+from __future__ import annotations
+
+{% if api.health_checks %}
+
+
+def test_health_endpoint_reports_ok(client):
+    """The health probe returns 200 with every dependency reachable."""
+    response = client.get("{{ api.prefix }}/health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["checks"]["app"] == "ok"
+{% if uses_record %}
+    assert payload["checks"]["database"] == "ok"
+{% endif %}
+{% endif %}
+
+
+def test_api_root_describes_the_service(client):
+    """The API root returns the service name and version."""
+    response = client.get("{{ api.prefix }}/")
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "{{ title }}"
+{% if api.openapi %}
+
+
+def test_openapi_schema_is_served(client):
+    """The generated OpenAPI document is available and lists our routes."""
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    assert "{{ api.prefix }}/health" in response.json()["paths"]
+{% endif %}
