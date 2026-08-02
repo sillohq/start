@@ -384,10 +384,11 @@ class ProjectCreator:
             steps.append(
                 "uv sync" if manifest.tooling.package_manager == "uv" else 'pip install -e ".[dev]"'
             )
-        # With --install the initial migration was already created and applied,
-        # so repeating it here would just print "no migrations to apply".
+        # `migrate init` writes the first migration and applies it, so the
+        # database exists. With --install that already happened during setup,
+        # and repeating it would just print "no migrations to apply".
         if manifest.uses_record and not installed:
-            steps.append("sillo-start migrate run")
+            steps.append("sillo-start migrate init")
         if manifest.admin.enabled:
             steps.append("sillo-start admin create-user")
         steps.append("sillo-start dev")

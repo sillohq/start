@@ -334,6 +334,8 @@ class TestCreation:
         result = ProjectCreator().create(tmp_path / "shop", manifest, blueprint, git=False)
 
         joined = " ".join(result.next_steps)
-        assert "migrate run" in joined
+        # `migrate init` is the one command that writes the first migration and
+        # applies it, so a project created without --install has a database.
+        assert "migrate init" in joined
         assert "admin create-user" in joined
         assert "Admin" in result.urls

@@ -54,7 +54,12 @@ def create(
         PythonPackageManager.UV, "--package-manager", help="Python package manager."
     ),
     install: bool = typer.Option(
-        False, "--install/--no-install", help="Install dependencies after generating."
+        False,
+        "--install/--no-install",
+        help=(
+            "Install dependencies and apply the initial migration. "
+            "Without it, run `sillo-start migrate init` afterwards."
+        ),
     ),
     git: bool = typer.Option(True, "--git/--no-git", help="Initialise a git repository."),
     force: bool = typer.Option(False, "--force", "-f", help="Generate into a non-empty directory."),

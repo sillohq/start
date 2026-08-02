@@ -79,7 +79,7 @@ AUTH = PackageGroup(
     requires_database=True,
     provides=("authentication",),
     post_install=(
-        "The users table is created by the initial migration, applied during setup.",
+        "The users table comes from the initial migration in database/migrations/.",
     ),
 )
 

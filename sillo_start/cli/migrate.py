@@ -17,15 +17,36 @@ app.add_typer(migrate_app, name="migrate")
 
 @migrate_app.command("init")
 @handle_errors
-def migrate_init() -> None:
-    """Set up migration tracking and create the initial schema."""
+def migrate_init(
+    fake: bool = typer.Option(
+        False,
+        "--fake",
+        help="Record the initial migration without running its SQL.",
+    ),
+) -> None:
+    """Set up migrations and create the database.
+
+    Writes the initial migration from the current models and applies it, so the
+    database exists and its schema is recorded. This is what `create` runs for
+    you when it installs dependencies; run it by hand after `--no-install`, or
+    on a checkout of someone else's project.
+
+    Use --fake when the tables already exist from outside the migration system.
+    """
     root, manifest = load_project()
     ensure_driver_installed(manifest)
     backend = get_backend(manifest)
 
     console.header("Initialising migrations", f"location: {manifest.database.migrations_path}")
     result = backend.initialise(root, manifest)
-    _report(result, success="Migrations initialised.")
+    if not result.ok:
+        _report(result, success="Migrations initialised.")
+        return
+
+    # initialise() only writes the migration. Applying it here is the whole
+    # point of the command — without it there is no database and no tables,
+    # which is not what "initialise" leads anyone to expect.
+    _apply_pending(root, manifest, backend, fake=fake)
 
 
 @migrate_app.command("make")
