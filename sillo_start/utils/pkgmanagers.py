@@ -24,7 +24,9 @@ class PythonPackageManager(ABC):
     name: str
 
     @abstractmethod
-    def add_command(self, packages: Sequence[str], *, group: str | None = None) -> list[str]:
+    def add_command(
+        self, packages: Sequence[str], *, group: str | None = None
+    ) -> list[str]:
         """Build the command that adds *packages*."""
 
     @abstractmethod
@@ -43,7 +45,9 @@ class PythonPackageManager(ABC):
         """Report whether the tool is installed."""
         return tool_exists(self.name)
 
-    def add(self, packages: Sequence[str], *, cwd: Path, group: str | None = None) -> CommandResult:
+    def add(
+        self, packages: Sequence[str], *, cwd: Path, group: str | None = None
+    ) -> CommandResult:
         return run(self.add_command(packages, group=group), cwd=cwd)
 
     def remove(self, packages: Sequence[str], *, cwd: Path) -> CommandResult:
@@ -63,7 +67,9 @@ class UvManager(PythonPackageManager):
 
     name = "uv"
 
-    def add_command(self, packages: Sequence[str], *, group: str | None = None) -> list[str]:
+    def add_command(
+        self, packages: Sequence[str], *, group: str | None = None
+    ) -> list[str]:
         command = ["uv", "add", *packages]
         if group:
             command.extend(["--group", group])
@@ -91,7 +97,9 @@ class PipManager(PythonPackageManager):
     #: Signals to the installer that it owns writing the manifest entry.
     writes_manifest = False
 
-    def add_command(self, packages: Sequence[str], *, group: str | None = None) -> list[str]:
+    def add_command(
+        self, packages: Sequence[str], *, group: str | None = None
+    ) -> list[str]:
         return ["pip", "install", *packages]
 
     def remove_command(self, packages: Sequence[str]) -> list[str]:
@@ -133,7 +141,9 @@ class FrontendPackageManager(ABC):
     def install(self, *, cwd: Path) -> CommandResult:
         return run(self.install_command(), cwd=cwd)
 
-    def add(self, packages: Sequence[str], *, cwd: Path, dev: bool = False) -> CommandResult:
+    def add(
+        self, packages: Sequence[str], *, cwd: Path, dev: bool = False
+    ) -> CommandResult:
         return run(self.add_command(packages, dev=dev), cwd=cwd)
 
 
@@ -228,7 +238,9 @@ def python_manager(name: str) -> PythonPackageManager:
         return _PYTHON_MANAGERS[name]()
     except KeyError as exc:
         known = ", ".join(sorted(_PYTHON_MANAGERS))
-        raise ToolNotFoundError(f"Unknown Python package manager '{name}'. Known: {known}.") from exc
+        raise ToolNotFoundError(
+            f"Unknown Python package manager '{name}'. Known: {known}."
+        ) from exc
 
 
 def frontend_manager(name: str) -> FrontendPackageManager:
@@ -241,7 +253,9 @@ def frontend_manager(name: str) -> FrontendPackageManager:
         return _FRONTEND_MANAGERS[name]()
     except KeyError as exc:
         known = ", ".join(sorted(_FRONTEND_MANAGERS))
-        raise ToolNotFoundError(f"Unknown frontend package manager '{name}'. Known: {known}.") from exc
+        raise ToolNotFoundError(
+            f"Unknown frontend package manager '{name}'. Known: {known}."
+        ) from exc
 
 
 def detect_python_manager() -> PythonPackageManager:

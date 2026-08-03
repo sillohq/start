@@ -7,76 +7,61 @@ uv sync --extra dev
 uv run pytest
 ```
 
-The dev environment installs `sillo-framework` and `sillo-inertia` from the
-sibling `../core` and `../inertia` checkouts, because the integration suite
-executes generated projects against the real framework.
+The tool depends on `typer` and `rich` and nothing else, so the development
+environment is small and installs in seconds.
 
 ## Running the tests
 
 ```bash
-uv run pytest                          # everything
-uv run pytest tests/test_config.py     # one module
-uv run pytest -k "rollback"            # by name
-uv run pytest --cov=sillo_start        # with coverage
+uv run pytest                            # everything
+uv run pytest tests/test_template.py     # one module
+uv run pytest -k "rename"                # by name
+uv run pytest --cov=sillo_start          # with coverage
 ```
 
-The suite has three layers:
+Two layers:
 
-- **Unit tests** for pure logic — manifest coherence, dependency resolution,
-  field parsing, naming.
-- **CLI tests** through Typer's runner, asserting on exit codes and output.
-- **Integration tests** that generate projects and run them in a subprocess
-  against the real framework.
+- **`tests/test_template.py`** — parsing a repository reference, unpacking an
+  archive, and rewriting the result into someone's project. The network is
+  stubbed at `urlopen`; what is tested is what the tool does with an archive,
+  not that GitHub serves one.
+- **`tests/test_cli.py`** — the command through Typer's runner, asserting on
+  exit codes and on what the user is told.
 
-The integration layer skips itself when `sillo` is not importable, so the suite
-still runs in a bare environment.
+Neither hits the network, so the suite runs offline and in well under a second.
 
-## Adding to the generated code
+## What belongs here
 
-Changing a template means changing code that lands in someone's project, so:
+Creating a project from a starter repository. That is the whole tool.
 
-1. **Check the symbol exists.** Everything a template may import is listed in
-   [`verified-apis.md`](verified-apis.md). If it is not there, verify it
-   against the real package and add it — with how you verified it.
-2. **Add an integration test.** Valid Python that does not work is the failure
-   mode that matters. Assert on the behaviour, not the file contents.
-3. **Prefer a condition over a new template.** `FileSpec(..., when=...)` keeps
-   the file set inspectable.
-4. **Write comments for the person who inherits the file.** Generated code
-   should explain constraints that are not visible from the code — why
-   middleware is ordered a particular way, why a model must be registered.
+Everything a project needs *after* it exists — migrations, users, the queue
+worker, running the app — belongs to the project, in its own `console.py`. The
+framework provides those operations as plain functions in
+`sillo.record.commands`, `sillo.users.commands` and `sillo.work.commands`, and
+a project decides how to expose them.
 
-## Adding a command
+The split is deliberate. A tool that also manages projects has to keep working
+against every version of every project it ever generated. A tool that only
+creates them is finished the moment the files land.
 
-Commands live in `cli/` and do argument handling and rendering only. The logic
-goes in a service layer so it can be tested without a terminal.
+## Layout
 
-```python
-@app.command()
-@handle_errors
-def mycommand(...):
-    """One-line summary, then the examples."""
-    root, manifest = load_project()
-    plan = build_my_plan(manifest)
-    execute_plan(plan, ExecutionContext(project_root=root, manifest=manifest))
 ```
-
-`@handle_errors` turns any `SilloStartError` into a clean message plus its hint
-and a predictable exit code. Raise those rather than printing and exiting.
-
-Mutating commands should support `--dry-run`; inspection commands should
-support `--json`.
+sillo_start/
+  __main__.py          `python -m sillo_start` and the console script
+  cli/
+    app.py             the Typer app, error rendering, exit codes
+    create.py          create-app
+  project/
+    template.py        fetching a starter and personalising it
+  utils/               console, naming, subprocess, package managers
+  exceptions.py
+```
 
 ## Style
 
-- Type annotations everywhere; `from __future__ import annotations` at the top.
-- Docstrings that say why, not what. `Args:`/`Returns:`/`Raises:` where the
-  answer is not obvious from the signature.
-- Errors carry a `hint` with the command that fixes them.
-- Never overwrite user code without `--force`; never hide subprocess output.
+Docstrings say *why*, not *what* — the signature already says what. A comment
+worth keeping is one explaining a decision that would otherwise look arbitrary.
 
-```bash
-uv run ruff check .
-uv run ruff format .
-uv run mypy sillo_start
-```
+Run `uv run ruff check .` and `uv run ruff format .` before opening a pull
+request.

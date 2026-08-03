@@ -7,14 +7,12 @@ output.
 
 from __future__ import annotations
 
+import io
+import tarfile
 from pathlib import Path
 
 import pytest
 
-from sillo_start.blueprints.registry import registry as blueprint_registry
-from sillo_start.config.models import ProjectSection, SilloManifest
-from sillo_start.project.creator import ProjectCreator
-from sillo_start.project.manifest import ProjectOptions, build_manifest
 from sillo_start.utils.console import console
 
 
@@ -28,46 +26,55 @@ def _quiet_console():
 
 
 @pytest.fixture
-def manifest() -> SilloManifest:
-    """A minimal valid manifest."""
-    return SilloManifest(project=ProjectSection(name="testapp"))
+def starter_files() -> dict[str, str]:
+    """The parts of a starter repository that personalisation touches."""
+    return {
+        "pyproject.toml": '[project]\nname = "starter"\nversion = "0.1.0"\n',
+        "app/config.py": (
+            '"""Typed settings for Starter."""\n\n'
+            'app_name: str = "Starter"\n'
+            'database_url: str = "sqlite://storage/starter.db"\n'
+        ),
+        ".env.example": (
+            "# Starter environment.\n"
+            "APP_NAME=Starter\n"
+            "SECRET_KEY=generate-me\n"
+            "DATABASE_URL=sqlite://storage/starter.db\n"
+        ),
+        "uv.lock": 'version = 1\n\n[[package]]\nname = "starter"\n',
+        "README.md": "# Sillo Starter\n\nProse mentioning starter is left alone.\n",
+    }
 
 
 @pytest.fixture
-def api_manifest() -> SilloManifest:
-    """A manifest built from the API blueprint."""
-    blueprint = blueprint_registry.get("api")
-    return build_manifest(ProjectOptions(name="testapp", blueprint="api"), blueprint)
+def unpacked(tmp_path: Path, starter_files: dict[str, str]) -> Path:
+    """A starter already on disk, as :func:`fetch` would have left it."""
+    root = tmp_path / "myapp"
+    for relative, content in starter_files.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    return root
 
 
 @pytest.fixture
-def fullstack_manifest() -> SilloManifest:
-    """A manifest with a database, auth and the admin panel."""
-    blueprint = blueprint_registry.get("fullstack")
-    return build_manifest(ProjectOptions(name="testapp", blueprint="fullstack"), blueprint)
+def tarball(starter_files: dict[str, str]):
+    """Build a GitHub-shaped tarball: everything under one top-level directory.
 
-
-@pytest.fixture
-def project_factory(tmp_path: Path):
-    """Build a generated project on disk and return its root.
-
-    Args:
-        The returned callable takes a blueprint name and any ProjectOptions
-        overrides.
+    The returned callable takes extra members as ``{path: content}``, so a test
+    can add a path the extractor is expected to refuse.
     """
 
-    def build(blueprint: str = "api", name: str = "testapp", **overrides) -> Path:
-        blueprint_obj = blueprint_registry.get(blueprint)
-        options = ProjectOptions(name=name, blueprint=blueprint, **overrides)
-        built = build_manifest(options, blueprint_obj)
-        root = tmp_path / name
-        ProjectCreator().create(root, built, blueprint_obj, git=False, install=False)
-        return root
+    def build(
+        extra: dict[str, str] | None = None, prefix: str = "starter-main"
+    ) -> bytes:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for relative, content in {**starter_files, **(extra or {})}.items():
+                payload = content.encode()
+                info = tarfile.TarInfo(f"{prefix}/{relative}")
+                info.size = len(payload)
+                archive.addfile(info, io.BytesIO(payload))
+        return buffer.getvalue()
 
     return build
-
-
-@pytest.fixture
-def project(project_factory) -> Path:
-    """A generated API project."""
-    return project_factory()

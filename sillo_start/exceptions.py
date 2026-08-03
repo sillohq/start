@@ -43,61 +43,6 @@ class UsageError(SilloStartError):
     exit_code = 2
 
 
-class ProjectError(SilloStartError):
-    """A project could not be created, located, or read."""
-
-
-class ProjectExistsError(ProjectError):
-    """The target directory already exists and is not empty."""
-
-
-class ManifestError(SilloStartError):
-    """``sillo.toml`` is missing, unreadable, or fails validation."""
-
-
-class ManifestNotFoundError(ManifestError):
-    """No ``sillo.toml`` was found in this directory or any parent."""
-
-    def __init__(
-        self,
-        message: str = "No sillo.toml found in this directory or any parent.",
-        *,
-        hint: str | None = "Run this from inside a Sillo project, or create one with `sillo-start create <name>`.",
-    ) -> None:
-        super().__init__(message, hint=hint)
-
-
-class BlueprintError(SilloStartError):
-    """A blueprint is unknown or produced an invalid plan."""
-
-
-class PackageGroupError(SilloStartError):
-    """A package group is unknown, conflicting, or unsatisfiable."""
-
-
-class DependencyResolutionError(PackageGroupError):
-    """Package group dependencies could not be resolved.
-
-    Raised for unknown requirements, mutual conflicts, and dependency cycles.
-    """
-
-
-class GeneratorError(SilloStartError):
-    """A generator is unknown or could not produce its output."""
-
-
-class OperationError(SilloStartError):
-    """A single transaction operation failed while applying."""
-
-
-class TransactionError(SilloStartError):
-    """A transaction failed; the ``__cause__`` carries the originating error."""
-
-
-class RollbackError(SilloStartError):
-    """A rollback failed, which may have left the project inconsistent."""
-
-
 class CommandError(SilloStartError):
     """An external command exited non-zero.
 
@@ -122,13 +67,3 @@ class CommandError(SilloStartError):
 
 class ToolNotFoundError(SilloStartError):
     """A required external tool is not installed or not on ``PATH``."""
-
-
-class ValidationError(SilloStartError):
-    """User-supplied input failed validation."""
-
-    exit_code = 2
-
-
-class PluginError(SilloStartError):
-    """A third-party plugin failed to load or registered something invalid."""

@@ -1,9 +1,9 @@
 """The Typer application and its shared behaviour.
 
-The CLI layer stays thin: it parses arguments, calls into the service layers,
-and renders the result. All the decisions live in ``project``, ``packages`` and
-``operations``, which is what lets the same logic be driven from tests without
-a terminal.
+The CLI layer stays thin: it parses arguments, calls into
+:mod:`sillo_start.project.template`, and renders the result. The fetching and
+personalising happen there, which is what lets them be driven from tests
+without a terminal.
 
 Errors are handled in one place. Anything deriving from
 :class:`~sillo_start.exceptions.SilloStartError` becomes a clean message plus
@@ -26,7 +26,7 @@ from ..utils.console import console
 
 app = typer.Typer(
     name="sillo-start",
-    help="Create, configure and run Sillo applications.",
+    help="Create a Sillo application from a starter repository.",
     add_completion=True,
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -51,10 +51,14 @@ def main(
         callback=version_callback,
         is_eager=True,
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show debug output and tracebacks."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress non-essential output."),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show debug output and tracebacks."
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Suppress non-essential output."
+    ),
 ) -> None:
-    """Sillo Start — the entrypoint for creating and managing Sillo apps."""
+    """Sillo Start — create a Sillo application from a starter repository."""
     console.configure(verbose=verbose, quiet=quiet)
 
 
@@ -97,7 +101,6 @@ def run() -> None:
     try:
         app()
     except SilloStartError as exc:
-        # Reached only for failures raised outside a command body, such as
-        # during plugin loading.
+        # Reached only for failures raised outside a command body.
         console.error(exc.message, hint=exc.hint)
         sys.exit(exc.exit_code)

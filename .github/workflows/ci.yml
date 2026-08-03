@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Test
+        run: uv run pytest -q
+
+  # The unit suite stubs the network, so on its own it would pass while the
+  # tool failed to fetch anything at all. This creates a project from the real
+  # starter and runs it — which is the only assertion that matters.
+  end-to-end:
+    name: Create a real project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Create a project from sillohq/starter
+        run: |
+          uv run --no-project --with-editable . \
+            python -m sillo_start create-app testapp --directory /tmp/testapp --no-git
+
+      - name: The project is the project's name, not the starter's
+        run: |
+          grep -q 'name = "testapp"' /tmp/testapp/pyproject.toml
+          grep -q 'APP_NAME=Testapp' /tmp/testapp/.env
+          # A starter's committed placeholder must never reach a new project.
+          ! grep -q 'SECRET_KEY=generate-me' /tmp/testapp/.env
+
+      - name: Set it up and run its checks
+        working-directory: /tmp/testapp
+        run: |
+          make setup
+          make check

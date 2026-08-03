@@ -58,7 +58,9 @@ class Console:
 
     # -- configuration -------------------------------------------------
 
-    def configure(self, *, quiet: bool | None = None, verbose: bool | None = None) -> None:
+    def configure(
+        self, *, quiet: bool | None = None, verbose: bool | None = None
+    ) -> None:
         """Update verbosity in place so the global instance stays shared."""
         if quiet is not None:
             self.quiet = quiet
@@ -136,7 +138,9 @@ class Console:
 
     # -- structured output ---------------------------------------------
 
-    def panel(self, body: str, *, title: str | None = None, style: str = "cyan") -> None:
+    def panel(
+        self, body: str, *, title: str | None = None, style: str = "cyan"
+    ) -> None:
         if not self.quiet:
             self._out.print(Panel(body, title=title, border_style=style, expand=False))
 
@@ -150,7 +154,9 @@ class Console:
         """Render a table; a table with no rows prints nothing."""
         if self.quiet or not rows:
             return
-        table = Table(title=title, show_header=True, header_style="bold", box=None, pad_edge=False)
+        table = Table(
+            title=title, show_header=True, header_style="bold", box=None, pad_edge=False
+        )
         for column in columns:
             table.add_column(column)
         for row in rows:

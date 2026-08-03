@@ -1,4 +1,4 @@
-"""``sillo-start create`` and ``sillo-start init``."""
+"""``sillo-start create-app``."""
 
 from __future__ import annotations
 
@@ -6,238 +6,109 @@ from pathlib import Path
 
 import typer
 
-from ..blueprints.registry import registry as blueprint_registry
-from ..config.defaults import (
-    AuthStrategy,
-    CacheDriver,
-    DatabaseDriver,
-    InertiaAdapter,
-    MailDriver,
-    PythonPackageManager,
-    QueueDriver,
-    StorageDriver,
-)
 from ..exceptions import UsageError
-from ..operations.base import ExecutionContext
-from ..packages.resolver import validate_selection
-from ..project.creator import ProjectCreator
-from ..project.manifest import ProjectOptions, build_manifest
-from ..prompts.questions import Answerer
-from ..prompts.wizard import SetupWizard, confirm_summary
-from ..utils.console import console, is_ci
+from ..utils.console import console
+from ..utils.naming import is_valid_project_name
 from .app import app, handle_errors
 
 
-@app.command()
+@app.command("create-app")
 @handle_errors
-def create(
+def create_app(
+    template: str = typer.Argument(
+        None, help="Starter repository, e.g. sillohq/starter or sillohq/starter@v1."
+    ),
     name: str = typer.Argument(None, help="Project name. Also the directory name."),
-    blueprint: str = typer.Option(
-        None, "--blueprint", "-b", help="Project archetype. See --list-blueprints."
-    ),
     directory: Path = typer.Option(
-        None, "--directory", "-d", help="Where to create the project. Defaults to ./<name>."
+        None,
+        "--directory",
+        "-d",
+        help="Where to create the project. Defaults to ./<name>.",
     ),
-    database: DatabaseDriver = typer.Option(None, "--database", help="Database backend."),
-    auth: AuthStrategy = typer.Option(None, "--auth", help="Authentication strategy."),
-    admin: bool = typer.Option(None, "--admin/--no-admin", help="Include the admin panel."),
-    inertia: InertiaAdapter = typer.Option(None, "--inertia", help="Add an Inertia frontend."),
-    queue: QueueDriver = typer.Option(None, "--queue", help="Background job backend."),
-    scheduler: bool = typer.Option(None, "--scheduler/--no-scheduler", help="Add scheduled tasks."),
-    cache: CacheDriver = typer.Option(None, "--cache", help="Cache backend."),
-    mail: MailDriver = typer.Option(None, "--mail", help="Mail transport."),
-    storage: StorageDriver = typer.Option(None, "--storage", help="File storage backend."),
-    package_group: list[str] = typer.Option(
-        None, "--package-group", "-p", help="Enable a package group. Repeatable."
-    ),
-    package_manager: PythonPackageManager = typer.Option(
-        PythonPackageManager.UV, "--package-manager", help="Python package manager."
+    ref: str = typer.Option(
+        None, "--ref", help="Branch or tag to take. Defaults to main."
     ),
     install: bool = typer.Option(
-        False,
-        "--install/--no-install",
-        help=(
-            "Install dependencies and apply the initial migration. "
-            "Without it, run `sillo-start migrate init` afterwards."
-        ),
+        False, "--install/--no-install", help="Install dependencies after fetching."
     ),
-    git: bool = typer.Option(True, "--git/--no-git", help="Initialise a git repository."),
-    force: bool = typer.Option(False, "--force", "-f", help="Generate into a non-empty directory."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be created."),
-    interaction: bool = typer.Option(
-        True, "--interaction/--no-interaction", help="Run the setup wizard."
+    git: bool = typer.Option(
+        True, "--git/--no-git", help="Initialise a git repository."
     ),
-    list_blueprints: bool = typer.Option(
-        False, "--list-blueprints", help="List the available blueprints and exit."
-    ),
+    force: bool = typer.Option(False, "--force", help="Allow a non-empty directory."),
 ) -> None:
-    """Create a new Sillo application.
+    """Create a project from a starter repository.
 
-    Run without flags for a guided setup, or pass flags with --no-interaction
-    to generate a project unattended:
+        sillo-start create-app myapp
+        sillo-start create-app sillohq/starter myapp
+        sillo-start create-app sillohq/starter@v1.2 myapp
 
-        sillo-start create myapp --database postgres --auth session --admin --no-interaction
+    The starter is a real application with its own CI, so what you get has been
+    booted and exercised rather than only rendered. With one argument the
+    default starter is used and the argument is the project name.
     """
-    if list_blueprints:
-        _print_blueprints()
-        raise typer.Exit()
+    from ..project.template import DEFAULT_TEMPLATE, Template, fetch, personalise
 
-    # CI has no terminal to prompt on, so the wizard is skipped there unless
-    # interaction was explicitly requested.
-    interactive = interaction and not is_ci()
-
-    if interactive and not _has_explicit_choices(locals()):
-        options, chosen_blueprint = SetupWizard().run(name)
-        if not confirm_summary(options, chosen_blueprint, Answerer()):
-            console.warning("Cancelled — nothing was created.")
-            raise typer.Exit(code=130)
-    else:
-        if not name:
-            raise UsageError(
-                "A project name is required in non-interactive mode.",
-                hint="sillo-start create myapp --no-interaction",
-            )
-        chosen_blueprint = blueprint_registry.get(blueprint or _infer_blueprint(inertia))
-        options = ProjectOptions(
-            name=name,
-            blueprint=chosen_blueprint.name,
-            database=database,
-            auth=auth,
-            admin=admin,
-            inertia=inertia,
-            queue=queue,
-            scheduler=scheduler,
-            cache=cache,
-            mail=mail,
-            storage=storage,
-            package_groups=validate_selection(list(package_group or [])),
-            python_manager=package_manager,
+    # One argument is the project name; the starter is only ever given when
+    # both are, so `create-app myapp` does the obvious thing.
+    if name is None:
+        name, template = template, DEFAULT_TEMPLATE
+    if not name:
+        raise UsageError(
+            "A project name is required.",
+            hint="sillo-start create-app myapp",
+        )
+    if not is_valid_project_name(name):
+        raise UsageError(
+            f"'{name}' is not a valid project name.",
+            hint="Use a letter followed by letters, digits, hyphens or underscores.",
         )
 
-    # An explicit --blueprint always wins, including over the wizard's choice.
-    if blueprint:
-        chosen_blueprint = blueprint_registry.get(blueprint)
-        options.blueprint = chosen_blueprint.name
-
-    manifest = build_manifest(options, chosen_blueprint)
-    root = (directory or Path.cwd() / options.name).resolve()
-
-    creator = ProjectCreator()
-
-    if dry_run:
-        _preview(creator, root, manifest, chosen_blueprint)
-        raise typer.Exit()
-
-    console.header(f"Creating {options.name}", f"blueprint: {chosen_blueprint.name}")
-    with console.progress("Generating project…"):
-        result = creator.create(
-            root, manifest, chosen_blueprint, force=force, install=install, git=git
+    parsed = Template.parse(template or DEFAULT_TEMPLATE, ref=ref)
+    root = (directory or Path.cwd() / name).resolve()
+    if root.exists() and any(root.iterdir()) and not force:
+        raise UsageError(
+            f"{root} is not empty.",
+            hint="Choose another directory, or pass --force.",
         )
 
-    _report(result, installed=install)
+    console.header(f"Creating {name}", f"from {parsed.slug}@{parsed.ref}")
+    with console.progress(f"Fetching {parsed.slug}…"):
+        fetch(parsed, root)
 
+    changed = personalise(root, name)
+    console.success(f"Fetched {parsed.slug} and renamed {len(changed)} file(s)")
 
-@app.command()
-@handle_errors
-def init(
-    blueprint: str = typer.Option("api", "--blueprint", "-b", help="Project archetype."),
-    force: bool = typer.Option(False, "--force", "-f", help="Generate into a non-empty directory."),
-    interaction: bool = typer.Option(True, "--interaction/--no-interaction"),
-) -> None:
-    """Create a Sillo application in the current directory.
+    if git:
+        from ..utils.subprocess import run, tool_exists
 
-    The directory name becomes the project name.
-    """
-    root = Path.cwd()
-    name = root.name
+        if tool_exists("git") and not (root / ".git").exists():
+            run(["git", "init", "--quiet"], cwd=root, check=False)
 
-    if interaction and not is_ci():
-        options, chosen_blueprint = SetupWizard().run(name)
-    else:
-        chosen_blueprint = blueprint_registry.get(blueprint)
-        options = ProjectOptions(name=name, blueprint=chosen_blueprint.name)
+    if install:
+        from ..utils.pkgmanagers import detect_python_manager
+        from ..utils.subprocess import run
 
-    manifest = build_manifest(options, chosen_blueprint)
-    console.header(f"Initialising {name}", f"blueprint: {chosen_blueprint.name}")
-    result = ProjectCreator().create(root, manifest, chosen_blueprint, force=force, git=False)
-    _report(result, installed=False, inside=True)
+        manager = detect_python_manager()
+        console.header("Dependencies", f"installing with {manager.name}")
+        with console.progress("Resolving…"):
+            result = run(manager.sync_command(), cwd=root, check=False, timeout=900)
+        if not result.ok:
+            console.failure(f"{manager.name} exited with code {result.returncode}.")
+            if result.output:
+                console.raw(result.output)
+            raise typer.Exit(code=1)
+        console.success("Dependencies installed.")
 
-
-# -- helpers ------------------------------------------------------------
-
-
-def _has_explicit_choices(arguments: dict) -> bool:
-    """Report whether any feature flag was passed.
-
-    Passing flags is taken as intent to skip the wizard for those decisions —
-    being asked a question you already answered on the command line is a poor
-    experience.
-    """
-    return any(
-        arguments.get(key) is not None
-        for key in (
-            "database",
-            "auth",
-            "admin",
-            "inertia",
-            "queue",
-            "scheduler",
-            "cache",
-            "mail",
-            "storage",
-        )
-    ) or bool(arguments.get("package_group"))
-
-
-def _infer_blueprint(inertia: InertiaAdapter | None) -> str:
-    """Choose a default blueprint from the flags given."""
-    return f"inertia-{inertia.value}" if inertia else "api"
-
-
-def _print_blueprints() -> None:
-    """List the registered blueprints."""
-    console.header("Available blueprints")
-    console.table(
-        ["Name", "Description"],
-        [(bp.name, bp.summary) for bp in blueprint_registry.all()],
-    )
     console.blank()
-    console.hint("Use one with: sillo-start create myapp --blueprint <name>")
-
-
-def _preview(creator: ProjectCreator, root: Path, manifest, blueprint) -> None:
-    """Render the creation plan without writing anything."""
-    resolution = creator._resolve_groups(manifest)  # noqa: SLF001 — same package
-    plan = creator.build_plan(root, manifest, blueprint, resolution, install=False, git=False)
-    context = ExecutionContext(project_root=root, manifest=manifest, dry_run=True)
-
-    console.header("Dry run", f"{len(plan)} operation(s) — nothing will be written")
-    plan.render(context, console=console)
-    console.blank()
-    console.info(f"Package groups: {', '.join(resolution.names)}")
-
-
-def _report(result, *, installed: bool, inside: bool = False) -> None:
-    """Print the post-creation summary."""
-    console.blank()
-    console.success(f"Created {result.manifest.project.name}")
-    console.blank()
-
     console.print("[bold]Next steps[/bold]")
-    steps = result.next_steps
-    if inside:
-        steps = [step for step in steps if not step.startswith("cd ")]
+    steps = [f"cd {root.name}"]
+    if not install:
+        steps.append("make setup")
+    else:
+        steps.append("make migrate")
+    steps.append("make dev")
     console.commands(steps)
-
-    if result.urls:
-        console.blank()
-        console.print("[bold]Once running[/bold]")
-        width = max(len(label) for label in result.urls)
-        for label, url in result.urls.items():
-            console.print(f"  {label.ljust(width)}   [cyan]{url}[/cyan]")
-
-    notes = result.resolution.post_install_notes()
-    if notes:
-        console.blank()
-        console.print("[bold]Notes[/bold]")
-        console.bullets(notes)
+    console.blank()
+    console.hint(
+        "The starter's README covers configuration, migrations and deployment."
+    )

@@ -39,7 +39,9 @@ class CommandResult:
     @property
     def output(self) -> str:
         """Combined output, for error reporting."""
-        return "\n".join(part for part in (self.stdout.strip(), self.stderr.strip()) if part)
+        return "\n".join(
+            part for part in (self.stdout.strip(), self.stderr.strip()) if part
+        )
 
 
 def which(tool: str) -> str | None:

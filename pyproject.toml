@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "sillo-start"
 version = "0.1.0"
-description = "The official application bootstrapper, installer and development orchestrator for the Sillo framework."
+description = "Create a Sillo application from a starter repository."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "BSD-3-Clause"
 authors = [
     { name = "Chidebele Dunamis", email = "techwithdunamix@gmail.com" },
 ]
-keywords = ["sillo", "scaffolding", "cli", "generator", "orchestrator", "asgi"]
+keywords = ["sillo", "scaffolding", "cli", "starter", "asgi"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -25,10 +25,6 @@ classifiers = [
 dependencies = [
     "typer>=0.12.0",
     "rich>=13.7.0",
-    "questionary>=2.0.1",
-    "pydantic>=2.6,<3.0",
-    "jinja2>=3.1.3",
-    "tomlkit>=0.12.4",
 ]
 
 [project.optional-dependencies]
@@ -37,17 +33,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "mypy>=1.15.0",
     "ruff>=0.6.0",
-    # The integration suite executes generated projects against the real
-    # framework, which is the only way to catch a template that produces valid
-    # Python that nonetheless does not work. Skipped when these are absent.
-    "sillo-framework",
-    "sillo-inertia",
-    "aiosqlite>=0.19.0",
 ]
-
-[tool.uv.sources]
-sillo-framework = { path = "../core", editable = true }
-sillo-inertia = { path = "../inertia", editable = true }
 
 [project.urls]
 Homepage = "https://github.com/sillohq/start"
@@ -77,11 +63,6 @@ ignore = [
     "E501",
     # Typer expresses defaults as function calls in the signature.
     "B008",
-    # `str, Enum` rather than `enum.StrEnum`: these values round-trip through
-    # TOML and through Pydantic's `use_enum_values`, both of which treat a
-    # str-subclass predictably. The gain from switching is cosmetic and the
-    # risk is a silent serialisation change.
-    "UP042",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -93,13 +74,3 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 disallow_untyped_defs = false
 files = ["sillo_start"]
-
-[dependency-groups]
-dev = [
-    "aerich>=0.9.3",
-    "bcrypt>=5.0.0",
-    "email-validator>=2.3.0",
-    "httpx>=0.28.1",
-    "jinja2>=3.1.6",
-    "tortoise-orm>=1.1.7",
-]
