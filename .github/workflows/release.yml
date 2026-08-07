@@ -1,0 +1,102 @@
+name: Release on Tag
+
+on:
+  push:
+    tags:
+      - 'sillo-start-v*'  # sillo-start releases: sillo-start-v0.1.0
+
+jobs:
+  release:
+    name: Build and Publish to PyPI
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read        # actions/checkout needs repo read access
+      id-token: write       # for OIDC (trusted publishing)
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#sillo-start-v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Releasing sillo-start v$VERSION"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      # PyPI takes the version from the package, not the tag. Without this a
+      # tag of sillo-start-v0.2.0 against a pyproject still saying 0.1.0
+      # publishes 0.1.0 and reports success, and the version it claims to have
+      # released is one that does not exist.
+      - name: The tag and the package must agree
+        run: |
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          PKG_VERSION=$(python -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag says $TAG_VERSION, pyproject.toml says $PKG_VERSION."
+            exit 1
+          fi
+          echo "both say $PKG_VERSION"
+
+      - name: Clean old builds
+        run: rm -rf dist build *.egg-info
+
+      - name: Setup virtual environment
+        run: uv venv
+
+      - name: Install dependencies
+        run: uv pip install -e ".[dev]"
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Run tests
+        run: uv run pytest -q --tb=short
+
+      # The unit suite stubs the network, so it would pass while the tool
+      # failed to fetch anything at all. Publishing a scaffolder that cannot
+      # scaffold is the failure worth spending a minute to rule out.
+      - name: Create a real project
+        run: |
+          uv run --no-project --with-editable . \
+            python -m sillo_start create-app testapp --directory /tmp/testapp --no-git
+          grep -q 'name = "testapp"' /tmp/testapp/pyproject.toml
+          ! grep -q 'SECRET_KEY=generate-me' /tmp/testapp/.env
+
+      - name: Build the package
+        run: uv build
+
+      - name: Check the artefacts
+        run: |
+          uv run --no-project --with twine twine check dist/*
+          ls -la dist
+
+      # Prefers OIDC trusted publishing (the id-token permission above); falls
+      # back to an API token when the PYPI_TOKEN secret is set. Passing an empty
+      # --token is a hard failure, so the secret must not be forwarded blindly.
+      - name: Publish to PyPI
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          if [ -n "$PYPI_TOKEN" ]; then
+            uv publish --token "$PYPI_TOKEN"
+          else
+            uv publish
+          fi
