@@ -159,7 +159,10 @@ class TestCreateApp:
 
         assert result.exit_code == 0, result.output
         assert called == []
-        assert "make setup" in result.output
+        # The next steps point at the `sillo` command the project already has,
+        # not at the starter's Makefile.
+        assert "sillo db:migrate" in result.output
+        assert "make" not in result.output
 
     def test_git_is_initialised_by_default(self, cli, no_fetch, tmp_path, monkeypatch):
         commands: list[list[str]] = []

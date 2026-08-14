@@ -12,6 +12,23 @@ from ..utils.naming import is_valid_project_name
 from .app import app, handle_errors
 
 
+def _prefers_uv() -> bool:
+    """Whether the next-steps should be phrased for uv.
+
+    The steps are printed for the reader to copy, so they have to name a tool
+    that is actually on the machine — `uv run sillo …` in front of someone
+    without uv is a command that cannot work.
+
+    This asks whether the executable exists rather than going through
+    :func:`detect_python_manager`, which is the installer's entry point: naming
+    a tool in a printed line is not the same as choosing one to install with,
+    and only the second should happen when ``--install`` was not asked for.
+    """
+    from ..utils.subprocess import tool_exists
+
+    return tool_exists("uv")
+
+
 @app.command("create-app")
 @handle_errors
 def create_app(
@@ -101,12 +118,17 @@ def create_app(
 
     console.blank()
     console.print("[bold]Next steps[/bold]")
+
+    # The `sillo` command, not the starter's Makefile. Make is a convenience the
+    # starter happens to ship, not something a new project should be told it
+    # needs — and it is one more tool to have installed on Windows.
+    manager_name = "uv" if _prefers_uv() else "pip"
     steps = [f"cd {root.name}"]
     if not install:
-        steps.append("make setup")
-    else:
-        steps.append("make migrate")
-    steps.append("make dev")
+        steps.append("uv sync" if manager_name == "uv" else 'pip install -e "."')
+    prefix = "uv run " if manager_name == "uv" else ""
+    steps.append(f"{prefix}sillo db:migrate")
+    steps.append(f"{prefix}sillo serve --reload")
     console.commands(steps)
     console.blank()
     console.hint(
