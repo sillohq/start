@@ -5,8 +5,9 @@ Creates a Sillo application from a starter repository.
 ```bash
 uvx sillo-start create-app myapp
 cd myapp
-make setup
-make dev
+uv sync
+uv run sillo db:migrate
+uv run sillo serve --reload
 ```
 
 That is the whole tool. It fetches a real, working application, renames it to
@@ -62,8 +63,8 @@ is in your address bar does what you expect.
 | `-v`, `--verbose` | Show tracebacks |
 
 Dependencies are **not** installed by default, so creating a project takes a
-second rather than a minute. `make setup` in the new project does it, along
-with everything else a first run needs.
+second rather than a minute. `uv sync` in the new project installs them, and
+the command prints the exact next steps for the manager it detected.
 
 ## What it does to the project
 
@@ -90,13 +91,13 @@ signing key. An existing `.env` is never touched — it may hold real credential
 Migrations, creating users, running the queue worker, starting the server —
 none of that is here.
 
-Those belong to the project, in its own `console.py`:
+Those belong to the project, behind its own `sillo` command:
 
 ```bash
-python console.py db migrate
-python console.py user admin ada@example.com ada
-python console.py worker
-python console.py serve --reload
+uv run sillo db:migrate
+uv run sillo user:create ada@example.com --admin
+uv run sillo queue:work
+uv run sillo serve --reload
 ```
 
 The framework provides the operations as plain functions —

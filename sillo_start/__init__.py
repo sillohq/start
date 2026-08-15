@@ -1,31 +1,23 @@
-"""Sillo Start — bootstrapper and orchestrator for Sillo applications.
+"""Sillo Start — creates a Sillo application from a starter repository.
 
-Sillo Start creates properly structured Sillo projects, installs and removes
-features against an existing project, and runs the development services a
-project needs. ``sillo.toml`` at the project root is the authoritative record
-of what a project is; every command reads and updates it.
+The tool fetches `sillohq/starter` as a tarball, renames it to yours, gives it
+its own secrets, and optionally initialises a git repository. It does not
+generate code from templates and it does not manage a project after creation:
+migrations, users, workers and the dev server all belong to the project's own
+``sillo`` command.
 
-The package is layered so the CLI stays a thin shell over reusable logic:
+The package is small and layered so the CLI stays a thin shell:
 
-``config``
-    The manifest schema and its loading/writing.
-``operations``
-    Reversible units of work (write a file, edit TOML, install a package) and
-    the transaction that applies them or rolls them back.
-``packages``
-    The package-group registry, dependency resolver, and installers.
-``blueprints``
-    Named project archetypes that turn wizard answers into a manifest.
-``project``
-    Creation, inspection and validation of projects on disk.
-``generators``
-    Component scaffolding for an existing project.
-``orchestration``
-    The supervised process manager behind ``sillo-start dev``.
-``prompts``
-    The interactive wizard.
 ``cli``
-    Typer commands, which do argument handling and rendering only.
+    Typer commands (``app``, ``create``), which do argument handling and
+    rendering only.
+``project``
+    ``Template``: fetching a starter, personalising it, generating secrets.
+``utils``
+    Console output, name derivation, package-manager detection, subprocess
+    helpers.
+``exceptions``
+    ``SilloStartError`` and the specific failures raised beneath it.
 """
 
 from __future__ import annotations
