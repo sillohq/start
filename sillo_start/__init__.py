@@ -22,6 +22,6 @@ The package is small and layered so the CLI stays a thin shell:
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "1.0.0a1"
 
 __all__ = ["__version__"]
