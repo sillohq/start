@@ -108,7 +108,13 @@ def create_app(
         manager = detect_python_manager()
         console.header("Dependencies", f"installing with {manager.name}")
         with console.progress("Resolving…"):
-            result = run(manager.sync_command(), cwd=root, check=False, timeout=900)
+            command = manager.sync_command()
+            # A starter's CI and local checks are part of it working. uv can
+            # install every declared extra in one operation; without this a
+            # generated project cannot run its own test suite after --install.
+            if manager.name == "uv":
+                command.append("--all-extras")
+            result = run(command, cwd=root, check=False, timeout=900)
         if not result.ok:
             console.failure(f"{manager.name} exited with code {result.returncode}.")
             if result.output:
@@ -125,12 +131,13 @@ def create_app(
     manager_name = "uv" if _prefers_uv() else "pip"
     steps = [f"cd {root.name}"]
     if not install:
-        steps.append("uv sync" if manager_name == "uv" else 'pip install -e "."')
+        steps.append(
+            "uv sync --all-extras"
+            if manager_name == "uv"
+            else 'pip install -e ".[dev]"'
+        )
     prefix = "uv run " if manager_name == "uv" else ""
-    steps.append(f"{prefix}sillo db:migrate")
-    steps.append(f"{prefix}sillo serve --reload")
+    steps.append(f"{prefix}sillo dev")
     console.commands(steps)
     console.blank()
-    console.hint(
-        "The starter's README covers configuration, migrations and deployment."
-    )
+    console.hint("The starter's README covers configuration, testing and deployment.")

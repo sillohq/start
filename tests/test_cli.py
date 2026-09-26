@@ -161,7 +161,7 @@ class TestCreateApp:
         assert called == []
         # The next steps point at the `sillo` command the project already has,
         # not at the starter's Makefile.
-        assert "sillo db:migrate" in result.output
+        assert "sillo dev" in result.output
         assert "make" not in result.output
 
     def test_git_is_initialised_by_default(self, cli, no_fetch, tmp_path, monkeypatch):
