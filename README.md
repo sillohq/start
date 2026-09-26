@@ -7,7 +7,7 @@ uvx sillo-start create-app myapp
 cd myapp
 uv sync
 uv run sillo db:migrate
-uv run sillo serve --reload
+uv run sillo dev
 ```
 
 That is the whole tool. It fetches a real, working application, renames it to
@@ -97,7 +97,7 @@ Those belong to the project, behind its own `sillo` command:
 uv run sillo db:migrate
 uv run sillo user:create ada@example.com --admin
 uv run sillo queue:work
-uv run sillo serve --reload
+uv run sillo dev
 ```
 
 The framework provides the operations as plain functions —
