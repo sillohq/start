@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sillo-start"
-version = "1.0.0a1"
+version = "1.0.0"
 description = "Create a Sillo application from a starter repository."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["sillo", "scaffolding", "cli", "starter", "asgi"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3.11",
@@ -47,7 +47,7 @@ sillo-start = "sillo_start.__main__:main"
 packages = ["sillo_start"]
 
 [tool.hatch.build.targets.sdist]
-include = ["sillo_start", "tests", "README.md"]
+include = ["sillo_start", "tests", "README.md", "CHANGELOG.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

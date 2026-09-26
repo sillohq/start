@@ -435,7 +435,7 @@ wheels = [
 
 [[package]]
 name = "sillo-start"
-version = "1.0.0a1"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "rich" },
